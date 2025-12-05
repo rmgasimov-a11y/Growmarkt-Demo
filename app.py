@@ -160,9 +160,9 @@ if run_btn:
         with st.spinner("Gemini is writing the Strategic Report..."):
             try:
                 genai.configure(api_key=GEMINI_KEY)
-                try:
+    try:
     # Everything inside here must be indented
-    model = genai.GenerativeModel('gemini-1.5-flash') 
+     model = genai.GenerativeModel('gemini-1.5-flash')    
     response = model.generate_content(prompt)
 except Exception as e:
     st.error(f"AI Error: {e}")
