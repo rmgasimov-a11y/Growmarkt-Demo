@@ -60,18 +60,22 @@ with st.sidebar:
     st.header(t["sidebar_title"])
     st.info(t["api_info"])
     
+    # API Keys Inputs
     GEMINI_KEY = st.text_input("Gemini API Key", type="password")
     COMTRADE_KEY = st.text_input("UN Comtrade Key", type="password")
     GOOGLE_KEY = st.text_input("Google API Key", type="password")
     GOOGLE_CX = st.text_input("Google Search Engine ID (CX)", type="password")
     HUNTER_KEY = st.text_input("Hunter.io API Key", type="password")
 
-    # Configure Gemini
+    # Configure Gemini immediately if key is present
     if GEMINI_KEY:
-        genai.configure(api_key=GEMINI_KEY)
+        try:
+            genai.configure(api_key=GEMINI_KEY)
+        except Exception as e:
+            st.error(f"API Key Error: {e}")
 
-# --- 3. SESSION STATE INITIALIZATION ---
-# This ensures data is remembered between button clicks
+# --- 3. SESSION STATE (MEMORY) ---
+# This fixes the "NameError" by remembering data between clicks
 if 'market_stats' not in st.session_state:
     st.session_state['market_stats'] = None
 if 'buyers_list' not in st.session_state:
@@ -89,9 +93,10 @@ with col2:
     target_country = st.text_input(t["lbl_country"], "276")
     country_name = st.text_input(t["lbl_cname"], "Germany")
 
+# Button 1: Search Data
 run_btn = st.button(t["btn_run"], type="primary", use_container_width=True)
 
-# --- 5. INTELLIGENCE ENGINE ---
+# --- 5. ENGINE: PHASE 1 & 2 ---
 if run_btn:
     if not (GEMINI_KEY and COMTRADE_KEY and GOOGLE_KEY and GOOGLE_CX and HUNTER_KEY):
         st.error(t["error_api"])
@@ -101,6 +106,7 @@ if run_btn:
         
         with st.status("Connecting to UN Comtrade Database...", expanded=True) as status:
             try:
+                # Comtrade API Call
                 df = comtradeapicall.getFinalData(
                     subscription_key=COMTRADE_KEY, typeCode='C', freqCode='A', clCode='HS',
                     period='2023', reporterCode=target_country, cmdCode=hs_code, flowCode='M',
@@ -118,7 +124,7 @@ if run_btn:
                     c1.metric("Import Volume", f"${val:,.0f}")
                     c2.metric("Unit Price", f"${unit_price:.2f}/kg")
                     
-                    # Save to Session State
+                    # SAVE TO MEMORY
                     st.session_state['market_stats'] = f"Total Import: ${val}. Unit Price: ${unit_price:.2f}/kg."
                 else:
                     st.warning(t["warn_mirror"])
@@ -147,7 +153,7 @@ if run_btn:
                     found_domains.append({"Company": title, "Domain": domain})
                     temp_buyers.append(title)
 
-                # Save buyers to Session State
+                # SAVE TO MEMORY
                 st.session_state['buyers_list'] = temp_buyers
 
                 final_data = []
@@ -169,25 +175,27 @@ if run_btn:
             except Exception as e:
                 st.error(f"Search Error: {e}")
 
-# --- PHASE 3: AI REPORT ---
+# --- 6. ENGINE: PHASE 3 (AI REPORT) ---
 st.divider()
 st.header("Phase 3: Strategic AI Report")
 
+# Button 2: Generate Report
 if st.button("Generate Strategic Report"):
-    # Check if Phase 1 and 2 data exists in session state
+    # Check if we have data in memory
     if not st.session_state['market_stats']:
-        st.error("Please run Phase 1 & 2 (Click SEARCH) first to gather data.")
+        st.error("⚠️ Please click 'SEARCH' (Phase 1 & 2) first to gather data!")
     elif not GEMINI_KEY:
          st.error("Please enter your Gemini API Key in the sidebar.")
     else:
         # Define Model
+        # Using gemini-1.5-flash which is the current standard
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # Prepare Data
+        # Retrieve Data from Memory
         market_data_str = st.session_state['market_stats']
         buyers_str = ", ".join(st.session_state['buyers_list'])
         
-        # Construct the Prompt
+        # Build the Prompt safely
         prompt = f"""
         ACT AS: Senior Foreign Trade Analyst.
         LANGUAGE: Respond STRICTLY in {t['ai_instruction']} language.
