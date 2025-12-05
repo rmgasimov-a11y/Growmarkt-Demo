@@ -6,68 +6,60 @@ import requests
 from googleapiclient.discovery import build
 
 # --- 1. CONFIGURATION & LANGUAGES ---
-st.set_page_config(page_title=" Growmarkt", page_icon="🌍", layout="wide")
+st.set_page_config(page_title="Growmarkt", page_icon="🌍", layout="wide")
 
-# Dictionary for Bilingual Interface
-LANGUAGES = {
-    "English": "en",
-    "Türkçe": "tr"
-}
+LANGUAGES = {"English": "en", "Türkçe": "tr"}
 
-# All text used in the app (Interface Translations)
 TRANSLATIONS = {
     "en": {
-        "title": "Marketing and Sales Tool",
+        "title": "🌍 Marketing & Sales Tool",
         "sidebar_title": "⚙️ System Configuration",
         "api_info": "Enter your API Keys to activate the engine.",
         "lbl_lang": "Select Output Language",
-        "lbl_prod": "Product Name",
-        "lbl_hs": "HS Code",
+        "lbl_prod": "Product Name (e.g., Hazelnuts)",
+        "lbl_hs": "HS Code (e.g., 0802)",
         "lbl_country": "Target Country Code (ISO 3-digit)",
         "lbl_cname": "Target Country Name",
-        "btn_run": "SEARCH",
+        "btn_run": "🚀 SEARCH",
         "step_1": "📊 Phase 1: Market Validation (UN Comtrade)",
         "step_2": "🏢 Phase 2: Buyer Discovery (Google & Hunter)",
         "step_3": "🧠 Phase 3: Strategic AI Report",
         "error_api": "❌ CRITICAL: Please enter ALL API keys in the sidebar!",
-        "warn_mirror": "⚠️ Direct Data unavailable. Switching to 'Mirror Data' logic (as per methodology).",
+        "warn_mirror": "⚠️ Direct Data unavailable. Switching to 'Mirror Data' logic.",
         "success_data": "✅ Market Data Retrieved Successfully",
-        "ai_instruction": "English" # Instruction for Gemini
+        "ai_instruction": "English"
     },
     "tr": {
-        "title": "Pazarlama ve Satış  Aracı",
+        "title": "🌍 Pazarlama ve Satış Aracı",
         "sidebar_title": "⚙️ Sistem Ayarları",
         "api_info": "Motoru aktifleştirmek için API anahtarlarını girin.",
         "lbl_lang": "Çıktı Dili Seçiniz",
-        "lbl_prod": "Ürün Adı",
-        "lbl_hs": "GTİP Kodu",
+        "lbl_prod": "Ürün Adı (Örn: Fındık)",
+        "lbl_hs": "GTİP Kodu (Örn: 0802)",
         "lbl_country": "Hedef Ülke Kodu (ISO 3-Haneli)",
         "lbl_cname": "Hedef Ülke Adı",
-        "btn_run": "ARAŞTIR",
+        "btn_run": "🚀 ARA",
         "step_1": "📊 Faz 1: Pazar Doğrulama (BM Comtrade)",
         "step_2": "🏢 Faz 2: Alıcı Tespiti (Google & Hunter)",
         "step_3": "🧠 Faz 3: Yapay Zeka Strateji Raporu",
         "error_api": "❌ KRİTİK HATA: Lütfen yan menüdeki tüm API anahtarlarını giriniz!",
-        "warn_mirror": "⚠️ Doğrudan veri yok. 'Ayna Verisi' (Mirror Data) mantığına geçiliyor.",
+        "warn_mirror": "⚠️ Doğrudan veri yok. 'Ayna Verisi' mantığına geçiliyor.",
         "success_data": "✅ Pazar Verisi Başarıyla Çekildi",
-        "ai_instruction": "Turkish" # Instruction for Gemini
+        "ai_instruction": "Turkish"
     }
 }
 
 # --- 2. SIDEBAR (SETTINGS) ---
 with st.sidebar:
-    # Language Selector
     st.header("Language / Dil")
     selected_lang = st.selectbox("Choose Interface Language", list(LANGUAGES.keys()))
     lang_code = LANGUAGES[selected_lang]
-    t = TRANSLATIONS[lang_code] # Load text based on selection
+    t = TRANSLATIONS[lang_code]
 
     st.divider()
-    
     st.header(t["sidebar_title"])
     st.info(t["api_info"])
     
-    # Secure Password Inputs
     GEMINI_KEY = st.text_input("Gemini API Key", type="password")
     COMTRADE_KEY = st.text_input("UN Comtrade Key", type="password")
     GOOGLE_KEY = st.text_input("Google API Key", type="password")
@@ -83,7 +75,6 @@ with col1:
     product_name = st.text_input(t["lbl_prod"], "Hazelnuts")
     hs_code = st.text_input(t["lbl_hs"], "0802")
 with col2:
-    # Defaulting to Germany (276) for demo purposes
     target_country = st.text_input(t["lbl_country"], "276")
     country_name = st.text_input(t["lbl_cname"], "Germany")
 
@@ -100,11 +91,12 @@ if run_btn:
         
         with st.status("Connecting to UN Comtrade Database...", expanded=True) as status:
             try:
-                # API Call
+                # FIXED: Added missing arguments for the new library version
                 df = comtradeapicall.getFinalData(
                     subscription_key=COMTRADE_KEY, typeCode='C', freqCode='A', clCode='HS',
                     period='2023', reporterCode=target_country, cmdCode=hs_code, flowCode='M',
-                    partnerCode=None, format_output='JSON'
+                    partnerCode=None, partner2Code=None, customsCode=None, motCode=None, 
+                    format_output='JSON'
                 )
                 
                 if df is not None and not df.empty:
@@ -116,11 +108,10 @@ if run_btn:
                     c1, c2 = st.columns(2)
                     c1.metric("Import Volume", f"${val:,.0f}")
                     c2.metric("Unit Price", f"${unit_price:.2f}/kg")
-                    
                     market_stats = f"Total Import: ${val}. Unit Price: ${unit_price:.2f}/kg."
                 else:
                     st.warning(t["warn_mirror"])
-                    market_stats = "Direct Data Unavailable. Analyst note: Used Mirror Data logic."
+                    market_stats = "Direct Data Unavailable. Used Mirror Data logic."
                     
             except Exception as e:
                 st.error(f"Comtrade API Error: {e}")
@@ -131,9 +122,8 @@ if run_btn:
         st.subheader(t["step_2"])
         buyers_list = []
         
-        with st.spinner("Scanning Google & Hunter.io for contacts..."):
+        with st.spinner("Scanning Google & Hunter.io..."):
             try:
-                # 1. Google Search
                 service = build("customsearch", "v1", developerKey=GOOGLE_KEY)
                 query = f"top {product_name} importers distributors {country_name} -site:pinterest.*"
                 res = service.cse().list(q=query, cx=GOOGLE_CX, num=5).execute()
@@ -144,7 +134,6 @@ if run_btn:
                     title = item['title']
                     found_domains.append({"Company": title, "Domain": domain})
 
-                # 2. Hunter.io Enrichment
                 final_data = []
                 for company in found_domains:
                     email = "Not Public"
@@ -155,47 +144,34 @@ if run_btn:
                             email = h_res['data']['emails'][0]['value']
                     except:
                         pass
-                    
                     final_data.append({"Company": company['Company'], "Website": company['Domain'], "Email": email})
                     buyers_list.append(company['Company'])
                 
-                # Display Results Table
                 if final_data:
                     st.dataframe(pd.DataFrame(final_data), use_container_width=True)
                 else:
-                    st.warning("No buyers found in this pass.")
-                    
+                    st.warning("No buyers found.")
             except Exception as e:
                 st.error(f"Search Error: {e}")
 
-        # --- PHASE 3: AI BRAIN (BILINGUAL) ---
+        # --- PHASE 3: AI BRAIN ---
         st.subheader(t["step_3"])
         
         with st.spinner("Gemini is writing the Strategic Report..."):
-            genai.configure(api_key=GEMINI_KEY)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            # The Prompt that adapts to the language
-            prompt = f"""
-            ACT AS: Senior Foreign Trade Analyst.
-            LANGUAGE: Respond STRICTLY in {t['ai_instruction']} language.
-            
-            TASK: Analyze the market potential for {product_name} in {country_name}.
-            
-            DATA PROVIDED:
-            - Market Stats: {market_stats}
-            - Potential Buyers Found: {", ".join(buyers_list)}
-            
-            METHODOLOGY (Follow these rules):
-            1. **Unit Value Analysis:** If price is >$5/kg, treat as Premium Market. If <$2, treat as Mass Market.
-            2. **Direct vs Mirror:** If data was missing, mention risks of transparency.
-            
-            OUTPUT SECTIONS:
-            1. **Executive Verdict:** (Go or No-Go?)
-            2. **Buyer Strategy:** Should we approach these buyers as a discounter or premium supplier?
-            3. **Cultural Tip:** One negotiation secret for {country_name}.
-            4. **Cold Email Subject:** Draft a catchy subject line for the buyers found.
-            """
-            
-            response = model.generate_content(prompt)
-            st.markdown(response.text)
+            try:
+                genai.configure(api_key=GEMINI_KEY)
+                # Switched to 'gemini-pro' which is more standard if 1.5-flash fails
+                model = genai.GenerativeModel('gemini-pro')
+                
+                prompt = f"""
+                ACT AS: Senior Foreign Trade Analyst.
+                LANGUAGE: Respond STRICTLY in {t['ai_instruction']} language.
+                TASK: Analyze the market potential for {product_name} in {country_name}.
+                DATA: {market_stats}. Potential Buyers: {", ".join(buyers_list)}
+                OUTPUT: 1. Verdict (Go/No-Go). 2. Strategy (Premium vs Mass). 3. Cultural Tip. 4. Cold Email Subject.
+                """
+                
+                response = model.generate_content(prompt)
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"AI Error: {e}")
