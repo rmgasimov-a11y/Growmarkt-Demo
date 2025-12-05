@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 from googleapiclient.discovery import build
 
-# --- PAGE CONFIG ---
+# --- PAGE SETUP ---
 st.set_page_config(page_title="Growmarkt AI", page_icon="🚀", layout="wide")
 
 # --- SIDEBAR API KEYS ---
@@ -32,24 +32,27 @@ def get_smart_details(product_name):
     It asks the AI for: HS_CODE|COUNTRY_ISO|COUNTRY_NAME
     """
     try:
-        # Try using the newer model. If it fails (old library), it catches the error below.
+        # Try using the newer model.
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = f"""
         I am exporting '{product_name}'.
-        1. Identify the best 4-digit HS Code.
-        2. Identify the ISO 3-digit numeric code for the #1 importing country.
+        1. Identify the best 4-digit HS Code (Harmonized System).
+        2. Identify the ISO 3-digit numeric code for the #1 importing country globally.
         3. Identify the Name of that country.
 
         CRITICAL: Return the result as a SINGLE LINE separated by pipes (|).
         Format: HS_CODE|COUNTRY_CODE|COUNTRY_NAME
         Example: 0802|276|Germany
         
-        Do not write any other text. Just the code.
+        Do not write "Here is the code". Just write the data.
         """
         
         response = model.generate_content(prompt)
         text = response.text.strip()
+        
+        # Clean up any potential markdown formatting the AI might add
+        text = text.replace("`", "").replace("json", "").replace("text", "").strip()
         
         # Parse the Pipe (|) format
         parts = text.split('|')
