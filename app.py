@@ -3,217 +3,150 @@ import google.generativeai as genai
 import comtradeapicall
 import pandas as pd
 import requests
+import json
 from googleapiclient.discovery import build
 
-# --- 1. CONFIGURATION & LANGUAGES ---
-st.set_page_config(page_title="Growmarkt", page_icon="🌍", layout="wide")
+# --- PAGE SETUP ---
+st.set_page_config(page_title="Growmarkt AI", page_icon="🚀", layout="wide")
 
-LANGUAGES = {"English": "en", "Türkçe": "tr"}
-
-TRANSLATIONS = {
-    "en": {
-        "title": "🌍 Marketing & Sales Tool",
-        "sidebar_title": "⚙️ System Configuration",
-        "api_info": "Enter your API Keys to activate the engine.",
-        "lbl_lang": "Select Output Language",
-        "lbl_prod": "Product Name (e.g., Hazelnuts)",
-        "lbl_hs": "HS Code (e.g., 0802)",
-        "lbl_country": "Target Country Code (ISO 3-digit)",
-        "lbl_cname": "Target Country Name",
-        "btn_run": "🚀 SEARCH",
-        "step_1": "📊 Phase 1: Market Validation (UN Comtrade)",
-        "step_2": "🏢 Phase 2: Buyer Discovery (Google & Hunter)",
-        "step_3": "🧠 Phase 3: Strategic AI Report",
-        "error_api": "❌ CRITICAL: Please enter ALL API keys in the sidebar!",
-        "warn_mirror": "⚠️ Direct Data unavailable. Switching to 'Mirror Data' logic.",
-        "success_data": "✅ Market Data Retrieved Successfully",
-        "ai_instruction": "English"
-    },
-    "tr": {
-        "title": "🌍 Pazarlama ve Satış Aracı",
-        "sidebar_title": "⚙️ Sistem Ayarları",
-        "api_info": "Motoru aktifleştirmek için API anahtarlarını girin.",
-        "lbl_lang": "Çıktı Dili Seçiniz",
-        "lbl_prod": "Ürün Adı (Örn: Fındık)",
-        "lbl_hs": "GTİP Kodu (Örn: 0802)",
-        "lbl_country": "Hedef Ülke Kodu (ISO 3-Haneli)",
-        "lbl_cname": "Hedef Ülke Adı",
-        "btn_run": "🚀 ARA",
-        "step_1": "📊 Faz 1: Pazar Doğrulama (BM Comtrade)",
-        "step_2": "🏢 Faz 2: Alıcı Tespiti (Google & Hunter)",
-        "step_3": "🧠 Faz 3: Yapay Zeka Strateji Raporu",
-        "error_api": "❌ KRİTİK HATA: Lütfen yan menüdeki tüm API anahtarlarını giriniz!",
-        "warn_mirror": "⚠️ Doğrudan veri yok. 'Ayna Verisi' mantığına geçiliyor.",
-        "success_data": "✅ Pazar Verisi Başarıyla Çekildi",
-        "ai_instruction": "Turkish"
-    }
-}
-
-# --- 2. SIDEBAR (SETTINGS) ---
+# --- SIDEBAR: API KEYS ---
 with st.sidebar:
-    st.header("Language / Dil")
-    selected_lang = st.selectbox("Choose Interface Language", list(LANGUAGES.keys()))
-    lang_code = LANGUAGES[selected_lang]
-    t = TRANSLATIONS[lang_code]
-
-    st.divider()
-    st.header(t["sidebar_title"])
-    st.info(t["api_info"])
-    
-    # API Keys Inputs
+    st.header("🔑 API Keys")
     GEMINI_KEY = st.text_input("Gemini API Key", type="password")
     COMTRADE_KEY = st.text_input("UN Comtrade Key", type="password")
     GOOGLE_KEY = st.text_input("Google API Key", type="password")
-    GOOGLE_CX = st.text_input("Google Search Engine ID (CX)", type="password")
+    GOOGLE_CX = st.text_input("Google Engine ID (CX)", type="password")
     HUNTER_KEY = st.text_input("Hunter.io API Key", type="password")
 
-    # Configure Gemini immediately if key is present
     if GEMINI_KEY:
-        try:
-            genai.configure(api_key=GEMINI_KEY)
-        except Exception as e:
-            st.error(f"API Key Error: {e}")
+        genai.configure(api_key=GEMINI_KEY)
 
-# --- 3. SESSION STATE (MEMORY) ---
-# This fixes the "NameError" by remembering data between clicks
-if 'market_stats' not in st.session_state:
-    st.session_state['market_stats'] = None
-if 'buyers_list' not in st.session_state:
-    st.session_state['buyers_list'] = []
+# --- FUNCTIONS ---
 
-# --- 4. MAIN INTERFACE ---
-st.title(t["title"])
-st.markdown("---")
+def get_product_intelligence(product_name):
+    """
+    Asks AI to identify the correct HS Code and Best Target Market 
+    so the user doesn't have to do it manually.
+    """
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""
+    I want to export '{product_name}'.
+    Identify the most specific 4-digit or 6-digit HS Code for this product.
+    Identify the top #1 importing country for this product (globally).
+    
+    Return ONLY a JSON string. No markdown. Format:
+    {{
+        "hs_code": "0802", 
+        "target_country_iso": "276", 
+        "country_name": "Germany"
+    }}
+    * Note: target_country_iso must be the ISO 3-digit numeric code (e.g. 276 for Germany, 840 for USA).
+    """
+    try:
+        response = model.generate_content(prompt)
+        # Clean the response to ensure valid JSON
+        clean_json = response.text.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean_json)
+    except Exception as e:
+        return None
 
-col1, col2 = st.columns(2)
-with col1:
-    product_name = st.text_input(t["lbl_prod"], "Hazelnuts")
-    hs_code = st.text_input(t["lbl_hs"], "0802")
-with col2:
-    target_country = st.text_input(t["lbl_country"], "276")
-    country_name = st.text_input(t["lbl_cname"], "Germany")
+def get_comtrade_data(api_key, hs_code, country_code):
+    """Fetches trade volume and price from UN Comtrade."""
+    try:
+        df = comtradeapicall.getFinalData(
+            subscription_key=api_key, typeCode='C', freqCode='A', clCode='HS',
+            period='2023', reporterCode=country_code, cmdCode=hs_code, flowCode='M',
+            format_output='JSON'
+        )
+        if df is not None and not df.empty:
+            val = df['primaryValue'].sum()
+            qty = df['netWgt'].sum()
+            unit_price = val / qty if qty > 0 else 0
+            return f"Total Import Volume: ${val:,.0f}, Average Price: ${unit_price:.2f}/kg"
+        return "Direct trade data not available (or zero trade)."
+    except Exception as e:
+        return f"Database Error: {e}"
 
-# Button 1: Search Data
-run_btn = st.button(t["btn_run"], type="primary", use_container_width=True)
+def get_buyers(google_key, cx, product, country, hunter_key):
+    """Finds buyers on Google and emails on Hunter."""
+    buyers = []
+    try:
+        service = build("customsearch", "v1", developerKey=google_key)
+        query = f"top {product} importers distributors {country} -site:pinterest.*"
+        res = service.cse().list(q=query, cx=cx, num=5).execute()
+        
+        for item in res.get('items', []):
+            domain = item['displayLink'].replace("www.", "")
+            email = "Not Found"
+            # Optional: Hunter.io check
+            if hunter_key:
+                try:
+                    h_url = f"https://api.hunter.io/v2/domain-search?domain={domain}&api_key={hunter_key}&limit=1"
+                    h_data = requests.get(h_url).json()
+                    if 'data' in h_data and h_data['data']['emails']:
+                        email = h_data['data']['emails'][0]['value']
+                except:
+                    pass
+            buyers.append(f"{item['title']} (Web: {domain}, Email: {email})")
+    except Exception as e:
+        buyers.append(f"Search Error: {str(e)}")
+    return buyers
 
-# --- 5. ENGINE: PHASE 1 & 2 ---
-if run_btn:
-    if not (GEMINI_KEY and COMTRADE_KEY and GOOGLE_KEY and GOOGLE_CX and HUNTER_KEY):
-        st.error(t["error_api"])
+# --- MAIN APP ---
+st.title("🌍 Growmarkt AI: Automated Market Analyst")
+st.markdown("Enter a product. We will find the HS code, the best country, and the strategy.")
+
+product_input = st.text_input("Product Name", "Hazelnuts")
+
+if st.button("Generate Full Report"):
+    if not (GEMINI_KEY and COMTRADE_KEY and GOOGLE_KEY and GOOGLE_CX):
+        st.error("Please enter your API Keys in the sidebar first.")
     else:
-        # --- PHASE 1: MARKET DATA ---
-        st.subheader(t["step_1"])
+        status_box = st.status("🚀 Starting AI Agent...", expanded=True)
         
-        with st.status("Connecting to UN Comtrade Database...", expanded=True) as status:
-            try:
-                # Comtrade API Call
-                df = comtradeapicall.getFinalData(
-                    subscription_key=COMTRADE_KEY, typeCode='C', freqCode='A', clCode='HS',
-                    period='2023', reporterCode=target_country, cmdCode=hs_code, flowCode='M',
-                    partnerCode=None, partner2Code=None, customsCode=None, motCode=None, 
-                    format_output='JSON'
-                )
+        # 1. AI IDENTIFICATION
+        status_box.write("🤖 Identifying HS Code and Target Market...")
+        intelligence = get_product_intelligence(product_input)
+        
+        if intelligence:
+            hs_code = intelligence['hs_code']
+            country_iso = intelligence['target_country_iso']
+            country_name = intelligence['country_name']
+            st.success(f"Target Identified: {country_name} (HS: {hs_code})")
+            
+            # 2. DATABASE SEARCH
+            status_box.write(f"📊 Fetching Trade Data for {country_name}...")
+            market_data = get_comtrade_data(COMTRADE_KEY, hs_code, country_iso)
+            
+            status_box.write("🔍 Searching for Buyers & Competitors...")
+            buyers_list = get_buyers(GOOGLE_KEY, GOOGLE_CX, product_input, country_name, HUNTER_KEY)
+            
+            status_box.update(label="Data Collection Complete!", state="complete", expanded=False)
+            
+            # 3. FINAL REPORT GENERATION
+            st.divider()
+            st.header(f"Strategic Report: {product_input} -> {country_name}")
+            
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            report_prompt = f"""
+            ACT AS: Senior Trade Consultant.
+            TASK: Write a strategic export report.
+            PRODUCT: {product_input} (HS: {hs_code})
+            TARGET MARKET: {country_name}
+            REAL DATA FOUND: {market_data}
+            POTENTIAL BUYERS FOUND: {", ".join(buyers_list)}
+            
+            OUTPUT STRUCTURE (Strictly follow this):
+            1. **Executive Summary**: Should we enter this market? (Yes/No and why).
+            2. **Market Analysis**: Interpret the trade volume and price. Is it premium or low cost?
+            3. **Buyer Strategy**: How to approach the buyers found?
+            4. **Draft Email**: Write a cold email to one of the buyers found above.
+            """
+            
+            with st.spinner("Writing final report..."):
+                report = model.generate_content(report_prompt)
+                st.markdown(report.text)
                 
-                if df is not None and not df.empty:
-                    val = df['primaryValue'].sum()
-                    qty = df['netWgt'].sum()
-                    unit_price = val / qty if qty > 0 else 0
-                    
-                    st.success(t["success_data"])
-                    c1, c2 = st.columns(2)
-                    c1.metric("Import Volume", f"${val:,.0f}")
-                    c2.metric("Unit Price", f"${unit_price:.2f}/kg")
-                    
-                    # SAVE TO MEMORY
-                    st.session_state['market_stats'] = f"Total Import: ${val}. Unit Price: ${unit_price:.2f}/kg."
-                else:
-                    st.warning(t["warn_mirror"])
-                    st.session_state['market_stats'] = "Direct Data Unavailable. Used Mirror Data logic."
-                    
-            except Exception as e:
-                st.error(f"Comtrade API Error: {e}")
-                st.session_state['market_stats'] = "Data fetch failed."
-            status.update(label="Phase 1 Complete", state="complete", expanded=False)
-
-        # --- PHASE 2: BUYER FINDER ---
-        st.subheader(t["step_2"])
-        
-        with st.spinner("Scanning Google & Hunter.io..."):
-            try:
-                service = build("customsearch", "v1", developerKey=GOOGLE_KEY)
-                query = f"top {product_name} importers distributors {country_name} -site:pinterest.*"
-                res = service.cse().list(q=query, cx=GOOGLE_CX, num=5).execute()
-                
-                found_domains = []
-                temp_buyers = []
-                
-                for item in res.get('items', []):
-                    domain = item['displayLink'].replace("www.", "")
-                    title = item['title']
-                    found_domains.append({"Company": title, "Domain": domain})
-                    temp_buyers.append(title)
-
-                # SAVE TO MEMORY
-                st.session_state['buyers_list'] = temp_buyers
-
-                final_data = []
-                for company in found_domains:
-                    email = "Not Public"
-                    try:
-                        h_url = f"https://api.hunter.io/v2/domain-search?domain={company['Domain']}&api_key={HUNTER_KEY}&limit=1"
-                        h_res = requests.get(h_url).json()
-                        if 'data' in h_res and h_res['data']['emails']:
-                            email = h_res['data']['emails'][0]['value']
-                    except:
-                        pass
-                    final_data.append({"Company": company['Company'], "Website": company['Domain'], "Email": email})
-                
-                if final_data:
-                    st.dataframe(pd.DataFrame(final_data), use_container_width=True)
-                else:
-                    st.warning("No buyers found.")
-            except Exception as e:
-                st.error(f"Search Error: {e}")
-
-# --- 6. ENGINE: PHASE 3 (AI REPORT) ---
-st.divider()
-st.header("Phase 3: Strategic AI Report")
-
-# Button 2: Generate Report
-if st.button("Generate Strategic Report"):
-    # Check if we have data in memory
-    if not st.session_state['market_stats']:
-        st.error("⚠️ Please click 'SEARCH' (Phase 1 & 2) first to gather data!")
-    elif not GEMINI_KEY:
-         st.error("Please enter your Gemini API Key in the sidebar.")
-    else:
-        # Define Model
-        # Using gemini-1.5-flash which is the current standard
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Retrieve Data from Memory
-        market_data_str = st.session_state['market_stats']
-        buyers_str = ", ".join(st.session_state['buyers_list'])
-        
-        # Build the Prompt safely
-        prompt = f"""
-        ACT AS: Senior Foreign Trade Analyst.
-        LANGUAGE: Respond STRICTLY in {t['ai_instruction']} language.
-        TASK: Analyze the market potential for {product_name} in {country_name}.
-        DATA: {market_data_str}. 
-        Potential Buyers Found: {buyers_str}
-        
-        OUTPUT FORMAT:
-        1. Verdict (Go/No-Go)
-        2. Pricing Strategy (Premium vs Mass)
-        3. Cultural Marketing Tip for {country_name}
-        4. Cold Email Subject Line for the buyers found.
-        """
-
-        with st.spinner("AI is analyzing trade data..."):
-            try:
-                response = model.generate_content(prompt)
-                st.subheader("Strategic Analysis")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"AI Error: {e}")
+        else:
+            status_box.update(label="Failed", state="error")
+            st.error("AI could not identify the product. Please try a clearer name.")
