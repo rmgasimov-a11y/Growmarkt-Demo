@@ -153,23 +153,25 @@ if run_btn:
                     st.warning("No buyers found.")
             except Exception as e:
                 st.error(f"Search Error: {e}")
+                # --- PHASE 3: AI REPORT (Copy and Paste this block) ---
+st.header("Phase 3: Strategic AI Report")
 
-        # --- PHASE 3: AI BRAIN ---
-        st.subheader(t["step_3"])
-        
-        with st.spinner("Gemini is writing the Strategic Report..."):
-            try:
-                genai.configure(api_key=GEMINI_KEY)
-                # --- COPY FROM HERE ---
-# Define the model first (no spaces at the start)
+# Define the model OUTSIDE the try block to avoid indentation errors
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-try:
-    # This line MUST have 4 spaces (or 1 tab) at the start
-    response = model.generate_content(prompt)
-except Exception as e:
-    st.error(f"AI Error: {e}")
-# --- END COPY ---
+if st.button("Generate Strategic Report"):
+    # Check if we have data to analyze (replace 'prompt' with your actual variable name if different)
+    if not prompt: 
+        st.error("Please complete Phase 1 and 2 to generate data first.")
+    else:
+        with st.spinner("AI is analyzing trade data..."):
+            try:
+                # This line must be indented exactly 4 spaces (or 1 tab)
+                response = model.generate_content(prompt)
+                st.subheader("Strategic Analysis")
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"AI Error: {e}")
                 prompt = f"""
                 ACT AS: Senior Foreign Trade Analyst.
                 LANGUAGE: Respond STRICTLY in {t['ai_instruction']} language.
