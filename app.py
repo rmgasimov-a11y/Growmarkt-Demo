@@ -161,7 +161,7 @@ if run_btn:
             try:
                 genai.configure(api_key=GEMINI_KEY)
                 # Switched to 'gemini-pro' which is more standard if 1.5-flash fails
-                model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-1.5-flash')
                 
                 prompt = f"""
                 ACT AS: Senior Foreign Trade Analyst.
