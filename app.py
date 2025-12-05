@@ -66,7 +66,18 @@ with st.sidebar:
     GOOGLE_CX = st.text_input("Google Search Engine ID (CX)", type="password")
     HUNTER_KEY = st.text_input("Hunter.io API Key", type="password")
 
-# --- 3. MAIN INTERFACE ---
+    # Configure Gemini
+    if GEMINI_KEY:
+        genai.configure(api_key=GEMINI_KEY)
+
+# --- 3. SESSION STATE INITIALIZATION ---
+# This ensures data is remembered between button clicks
+if 'market_stats' not in st.session_state:
+    st.session_state['market_stats'] = None
+if 'buyers_list' not in st.session_state:
+    st.session_state['buyers_list'] = []
+
+# --- 4. MAIN INTERFACE ---
 st.title(t["title"])
 st.markdown("---")
 
@@ -80,18 +91,16 @@ with col2:
 
 run_btn = st.button(t["btn_run"], type="primary", use_container_width=True)
 
-# --- 4. INTELLIGENCE ENGINE ---
+# --- 5. INTELLIGENCE ENGINE ---
 if run_btn:
     if not (GEMINI_KEY and COMTRADE_KEY and GOOGLE_KEY and GOOGLE_CX and HUNTER_KEY):
         st.error(t["error_api"])
     else:
         # --- PHASE 1: MARKET DATA ---
         st.subheader(t["step_1"])
-        market_stats = ""
         
         with st.status("Connecting to UN Comtrade Database...", expanded=True) as status:
             try:
-                # FIXED: Added missing arguments for the new library version
                 df = comtradeapicall.getFinalData(
                     subscription_key=COMTRADE_KEY, typeCode='C', freqCode='A', clCode='HS',
                     period='2023', reporterCode=target_country, cmdCode=hs_code, flowCode='M',
@@ -108,19 +117,20 @@ if run_btn:
                     c1, c2 = st.columns(2)
                     c1.metric("Import Volume", f"${val:,.0f}")
                     c2.metric("Unit Price", f"${unit_price:.2f}/kg")
-                    market_stats = f"Total Import: ${val}. Unit Price: ${unit_price:.2f}/kg."
+                    
+                    # Save to Session State
+                    st.session_state['market_stats'] = f"Total Import: ${val}. Unit Price: ${unit_price:.2f}/kg."
                 else:
                     st.warning(t["warn_mirror"])
-                    market_stats = "Direct Data Unavailable. Used Mirror Data logic."
+                    st.session_state['market_stats'] = "Direct Data Unavailable. Used Mirror Data logic."
                     
             except Exception as e:
                 st.error(f"Comtrade API Error: {e}")
-                market_stats = "Data fetch failed."
+                st.session_state['market_stats'] = "Data fetch failed."
             status.update(label="Phase 1 Complete", state="complete", expanded=False)
 
         # --- PHASE 2: BUYER FINDER ---
         st.subheader(t["step_2"])
-        buyers_list = []
         
         with st.spinner("Scanning Google & Hunter.io..."):
             try:
@@ -129,10 +139,16 @@ if run_btn:
                 res = service.cse().list(q=query, cx=GOOGLE_CX, num=5).execute()
                 
                 found_domains = []
+                temp_buyers = []
+                
                 for item in res.get('items', []):
                     domain = item['displayLink'].replace("www.", "")
                     title = item['title']
                     found_domains.append({"Company": title, "Domain": domain})
+                    temp_buyers.append(title)
+
+                # Save buyers to Session State
+                st.session_state['buyers_list'] = temp_buyers
 
                 final_data = []
                 for company in found_domains:
@@ -145,7 +161,6 @@ if run_btn:
                     except:
                         pass
                     final_data.append({"Company": company['Company'], "Website": company['Domain'], "Email": email})
-                    buyers_list.append(company['Company'])
                 
                 if final_data:
                     st.dataframe(pd.DataFrame(final_data), use_container_width=True)
@@ -153,34 +168,44 @@ if run_btn:
                     st.warning("No buyers found.")
             except Exception as e:
                 st.error(f"Search Error: {e}")
-                # --- PHASE 3: AI REPORT (Copy and Paste this block) ---
+
+# --- PHASE 3: AI REPORT ---
+st.divider()
 st.header("Phase 3: Strategic AI Report")
 
-# Define the model OUTSIDE the try block to avoid indentation errors
-model = genai.GenerativeModel('gemini-1.5-flash')
-
 if st.button("Generate Strategic Report"):
-    # Check if we have data to analyze (replace 'prompt' with your actual variable name if different)
-    if not prompt: 
-        st.error("Please complete Phase 1 and 2 to generate data first.")
+    # Check if Phase 1 and 2 data exists in session state
+    if not st.session_state['market_stats']:
+        st.error("Please run Phase 1 & 2 (Click SEARCH) first to gather data.")
+    elif not GEMINI_KEY:
+         st.error("Please enter your Gemini API Key in the sidebar.")
     else:
+        # Define Model
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Prepare Data
+        market_data_str = st.session_state['market_stats']
+        buyers_str = ", ".join(st.session_state['buyers_list'])
+        
+        # Construct the Prompt
+        prompt = f"""
+        ACT AS: Senior Foreign Trade Analyst.
+        LANGUAGE: Respond STRICTLY in {t['ai_instruction']} language.
+        TASK: Analyze the market potential for {product_name} in {country_name}.
+        DATA: {market_data_str}. 
+        Potential Buyers Found: {buyers_str}
+        
+        OUTPUT FORMAT:
+        1. Verdict (Go/No-Go)
+        2. Pricing Strategy (Premium vs Mass)
+        3. Cultural Marketing Tip for {country_name}
+        4. Cold Email Subject Line for the buyers found.
+        """
+
         with st.spinner("AI is analyzing trade data..."):
             try:
-                # This line must be indented exactly 4 spaces (or 1 tab)
                 response = model.generate_content(prompt)
                 st.subheader("Strategic Analysis")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"AI Error: {e}")
-                prompt = f"""
-                ACT AS: Senior Foreign Trade Analyst.
-                LANGUAGE: Respond STRICTLY in {t['ai_instruction']} language.
-                TASK: Analyze the market potential for {product_name} in {country_name}.
-                DATA: {market_stats}. Potential Buyers: {", ".join(buyers_list)}
-                OUTPUT: 1. Verdict (Go/No-Go). 2. Strategy (Premium vs Mass). 3. Cultural Tip. 4. Cold Email Subject.
-                """
-                
-                response = model.generate_content(prompt)
                 st.markdown(response.text)
             except Exception as e:
                 st.error(f"AI Error: {e}")
